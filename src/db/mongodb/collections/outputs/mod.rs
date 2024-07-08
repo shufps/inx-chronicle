@@ -434,7 +434,7 @@ impl OutputCollection {
                     doc! { "$group": {
                         "_id": null,
                         "total_balance": { "$sum": { "$toDecimal": "$output.amount" } },
-                        "sig_locked_balance": { "$sum": { 
+                        "sig_locked_balance": { "$sum": {
                             "$cond": [ { "$eq": [ "$details.is_trivial_unlock", true] }, { "$toDecimal": "$output.amount" }, 0 ]
                         } },
                     } },

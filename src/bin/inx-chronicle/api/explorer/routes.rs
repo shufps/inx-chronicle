@@ -25,7 +25,7 @@ use futures::{StreamExt, TryStreamExt};
 
 use super::{
     extractors::{
-        BlocksByMilestoneCursor, BlocksByMilestoneIdPagination, BlocksByMilestoneIndexPagination, LedgerIndex,
+        BlocksByMilestoneCursor, BlocksByMilestoneIdPagination, BlocksByMilestoneIndexPagination, TokenDistributionQuery,
         LedgerUpdatesByAddressCursor, LedgerUpdatesByAddressPagination, LedgerUpdatesByMilestoneCursor,
         LedgerUpdatesByMilestonePagination, MilestonesCursor, MilestonesPagination, RichestAddressesQuery,
     },
@@ -345,22 +345,32 @@ fn calculate_seconds_until_midnight() -> u64 {
 static RICHEST_ADDRESSES_CACHE: Lazy<RwLock<Option<RichestCacheData>>> = Lazy::new(|| RwLock::new(None));
 static TOKEN_DISTRIBUTION_CACHE: Lazy<RwLock<Option<TokenCacheData>>> = Lazy::new(|| RwLock::new(None));
 
+fn get_cache_bool(cache: Option<bool>) -> bool {
+    // default case is use the cache
+    match cache {
+        Some(b) => b,
+        None => true,
+    }
+}
+
 async fn richest_addresses_ledger_analytics(
     database: Extension<MongoDb>,
-    RichestAddressesQuery { top, ledger_index }: RichestAddressesQuery,
+    RichestAddressesQuery { top, ledger_index , cached}: RichestAddressesQuery,
 ) -> ApiResult<RichestAddressesResponse> {
     let ledger_index = resolve_ledger_index(&database, ledger_index).await?;
     let mut cache = RICHEST_ADDRESSES_CACHE.write().await;
+    let cached = get_cache_bool(cached);
     let seconds_until_midnight = calculate_seconds_until_midnight();
 
-    if let Some(cached_data) = &*cache {
-        if cached_data.last_updated.elapsed() < Duration::from_secs(seconds_until_midnight) {
-            return Ok(cached_data.data.clone());
-        }
-    }
-
-    info!("refreshing richest-addresses cache ...");
     let refresh_start = SystemTime::now();
+    if cached {
+        if let Some(cached_data) = &*cache {
+            if cached_data.last_updated.elapsed() < Duration::from_secs(seconds_until_midnight) {
+                return Ok(cached_data.data.clone());
+            }
+        }
+        info!("refreshing richest-addresses cache ...");
+    }
 
     let res = database
         .collection::<OutputCollection>()
@@ -387,32 +397,37 @@ async fn richest_addresses_ledger_analytics(
         ledger_index,
     };
 
-    // Store the response in the cache
-    *cache = Some(RichestCacheData { last_updated: Instant::now(), data: response.clone() });
+    if cached {
+        // Store the response in the cache
+        *cache = Some(RichestCacheData { last_updated: Instant::now(), data: response.clone() });
 
-    let refresh_elapsed = refresh_start.elapsed().unwrap();
-    info!("refreshing richest-addresses cache done. Took {:?}", refresh_elapsed);
-    info!("next refresh in {} seconds", seconds_until_midnight);
+        let refresh_elapsed = refresh_start.elapsed().unwrap();
+        info!("refreshing richest-addresses cache done. Took {:?}", refresh_elapsed);
+        info!("next refresh in {} seconds", seconds_until_midnight);
+    }
 
     Ok(response)
 }
 
 async fn token_distribution_ledger_analytics(
     database: Extension<MongoDb>,
-    LedgerIndex { ledger_index }: LedgerIndex,
+    TokenDistributionQuery { ledger_index , cached}: TokenDistributionQuery,
 ) -> ApiResult<TokenDistributionResponse> {
     let ledger_index = resolve_ledger_index(&database, ledger_index).await?;
     let mut cache = TOKEN_DISTRIBUTION_CACHE.write().await;
+    let cached = get_cache_bool(cached);
 
-    let seconds_until_midnight = calculate_seconds_until_midnight();
-    if let Some(cached_data) = &*cache {
-        if cached_data.last_updated.elapsed() < Duration::from_secs(seconds_until_midnight) {
-            return Ok(cached_data.data.clone());
-        }
-    }
-
-    info!("refreshing token-distribution cache ...");
     let refresh_start = SystemTime::now();
+    let seconds_until_midnight = calculate_seconds_until_midnight();
+    if cached {
+        if let Some(cached_data) = &*cache {
+            if cached_data.last_updated.elapsed() < Duration::from_secs(seconds_until_midnight) {
+                return Ok(cached_data.data.clone());
+            }
+        }
+
+        info!("refreshing token-distribution cache ...");
+    }
 
     let res = database
         .collection::<OutputCollection>()
@@ -424,12 +439,14 @@ async fn token_distribution_ledger_analytics(
         ledger_index,
     };
 
-    // Store the response in the cache
-    *cache = Some(TokenCacheData { last_updated: Instant::now(), data: response.clone() });
+    if cached {
+        // Store the response in the cache
+        *cache = Some(TokenCacheData { last_updated: Instant::now(), data: response.clone() });
 
-    let refresh_elapsed = refresh_start.elapsed().unwrap();
-    info!("refreshing token-distribution cache done. Took {:?}", refresh_elapsed);
-    info!("next refresh in {} seconds", seconds_until_midnight);
+        let refresh_elapsed = refresh_start.elapsed().unwrap();
+        info!("refreshing token-distribution cache done. Took {:?}", refresh_elapsed);
+        info!("next refresh in {} seconds", seconds_until_midnight);
+    }
 
     Ok(response)
 }
