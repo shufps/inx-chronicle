@@ -144,6 +144,42 @@ impl AppendToQuery for AddressQuery {
     }
 }
 
+/// Queries for outputs that can be unlocked by an address, either directly or as the return address of an
+/// `expiration` or `storage_deposit_return` unlock condition. Mirrors the `unlockableByAddress` filter of the
+/// `inx-indexer` for basic and NFT outputs.
+pub(super) struct UnlockableByAddressQuery(pub(super) Option<Address>);
+
+impl AppendToQuery for UnlockableByAddressQuery {
+    fn append_to(self, queries: &mut Vec<Document>) {
+        if let Some(address) = self.0 {
+            queries.push(doc! {
+                "$or": [
+                    { "details.address": address },
+                    { "output.expiration_unlock_condition.return_address": address },
+                    { "output.storage_deposit_return_unlock_condition.return_address": address },
+                ]
+            });
+        }
+    }
+}
+
+/// Queries for alias outputs that can be unlocked by an address, either as state controller or as governor. Mirrors
+/// the `unlockableByAddress` filter of the `inx-indexer` for alias outputs.
+pub(super) struct AliasUnlockableByAddressQuery(pub(super) Option<Address>);
+
+impl AppendToQuery for AliasUnlockableByAddressQuery {
+    fn append_to(self, queries: &mut Vec<Document>) {
+        if let Some(address) = self.0 {
+            queries.push(doc! {
+                "$or": [
+                    { "details.address": address },
+                    { "output.governor_address_unlock_condition.address": address },
+                ]
+            });
+        }
+    }
+}
+
 /// Queries for an unlock condition of type `governor_address`.
 pub(super) struct GovernorQuery(pub(super) Option<Address>);
 

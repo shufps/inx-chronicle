@@ -9,7 +9,9 @@ use axum::{
     Extension,
 };
 use chronicle::{
-    db::mongodb::collections::{AliasOutputsQuery, BasicOutputsQuery, FoundryOutputsQuery, NftOutputsQuery, SortOrder},
+    db::mongodb::collections::{
+        AliasOutputsQuery, BasicOutputsQuery, FoundryOutputsQuery, NftOutputsQuery, OutputsQuery, SortOrder,
+    },
     model::{
         tangle::MilestoneIndex,
         utxo::{Address, OutputId, Tag},
@@ -70,8 +72,76 @@ impl Display for IndexedOutputsCursor {
 
 #[derive(Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct OutputsPaginationQuery {
+    pub unlockable_by_address: Option<String>,
+    pub has_native_tokens: Option<bool>,
+    pub min_native_token_count: Option<String>,
+    pub max_native_token_count: Option<String>,
+    pub created_before: Option<u32>,
+    pub created_after: Option<u32>,
+    pub page_size: Option<usize>,
+    pub cursor: Option<String>,
+    pub sort: Option<String>,
+    pub include_spent: Option<bool>,
+}
+
+#[async_trait]
+impl<B: Send> FromRequest<B> for IndexedOutputsPagination<OutputsQuery> {
+    type Rejection = ApiError;
+
+    async fn from_request(req: &mut axum::extract::RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let Query(query) = Query::<OutputsPaginationQuery>::from_request(req)
+            .await
+            .map_err(RequestError::from)?;
+        let Extension(config) = Extension::<ApiConfigData>::from_request(req).await?;
+
+        let (cursor, page_size) = if let Some(cursor) = query.cursor {
+            let cursor: IndexedOutputsCursor = cursor.parse()?;
+            (Some((cursor.milestone_index, cursor.output_id)), cursor.page_size)
+        } else {
+            (None, query.page_size.unwrap_or(DEFAULT_PAGE_SIZE))
+        };
+
+        let sort = query
+            .sort
+            .as_deref()
+            .map_or(Ok(Default::default()), str::parse)
+            .map_err(RequestError::SortOrder)?;
+
+        Ok(IndexedOutputsPagination {
+            query: OutputsQuery {
+                unlockable_by_address: query
+                    .unlockable_by_address
+                    .map(|address| Address::from_str(&address))
+                    .transpose()
+                    .map_err(RequestError::from)?,
+                has_native_tokens: query.has_native_tokens,
+                min_native_token_count: query
+                    .min_native_token_count
+                    .map(|c| U256::from_dec_str(&c))
+                    .transpose()
+                    .map_err(RequestError::from)?,
+                max_native_token_count: query
+                    .max_native_token_count
+                    .map(|c| U256::from_dec_str(&c))
+                    .transpose()
+                    .map_err(RequestError::from)?,
+                created_before: query.created_before.map(Into::into),
+                created_after: query.created_after.map(Into::into),
+            },
+            page_size: page_size.min(config.max_page_size),
+            cursor,
+            sort,
+            include_spent: query.include_spent.unwrap_or_default(),
+        })
+    }
+}
+
+#[derive(Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct BasicOutputsPaginationQuery {
     pub address: Option<String>,
+    pub unlockable_by_address: Option<String>,
     pub has_native_tokens: Option<bool>,
     pub min_native_token_count: Option<String>,
     pub max_native_token_count: Option<String>,
@@ -121,6 +191,11 @@ impl<B: Send> FromRequest<B> for IndexedOutputsPagination<BasicOutputsQuery> {
             query: BasicOutputsQuery {
                 address: query
                     .address
+                    .map(|address| Address::from_str(&address))
+                    .transpose()
+                    .map_err(RequestError::from)?,
+                unlockable_by_address: query
+                    .unlockable_by_address
                     .map(|address| Address::from_str(&address))
                     .transpose()
                     .map_err(RequestError::from)?,
@@ -178,6 +253,7 @@ impl<B: Send> FromRequest<B> for IndexedOutputsPagination<BasicOutputsQuery> {
 pub struct AliasOutputsPaginationQuery {
     pub state_controller: Option<String>,
     pub governor: Option<String>,
+    pub unlockable_by_address: Option<String>,
     pub issuer: Option<String>,
     pub sender: Option<String>,
     pub has_native_tokens: Option<bool>,
@@ -223,6 +299,11 @@ impl<B: Send> FromRequest<B> for IndexedOutputsPagination<AliasOutputsQuery> {
                     .map_err(RequestError::from)?,
                 governor: query
                     .governor
+                    .map(|address| Address::from_str(&address))
+                    .transpose()
+                    .map_err(RequestError::from)?,
+                unlockable_by_address: query
+                    .unlockable_by_address
                     .map(|address| Address::from_str(&address))
                     .transpose()
                     .map_err(RequestError::from)?,
@@ -329,6 +410,7 @@ impl<B: Send> FromRequest<B> for IndexedOutputsPagination<FoundryOutputsQuery> {
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct NftOutputsPaginationQuery {
     pub address: Option<String>,
+    pub unlockable_by_address: Option<String>,
     pub issuer: Option<String>,
     pub sender: Option<String>,
     pub has_native_tokens: Option<bool>,
@@ -379,6 +461,11 @@ impl<B: Send> FromRequest<B> for IndexedOutputsPagination<NftOutputsQuery> {
             query: NftOutputsQuery {
                 address: query
                     .address
+                    .map(|address| Address::from_str(&address))
+                    .transpose()
+                    .map_err(RequestError::from)?,
+                unlockable_by_address: query
+                    .unlockable_by_address
                     .map(|address| Address::from_str(&address))
                     .transpose()
                     .map_err(RequestError::from)?,
@@ -453,6 +540,46 @@ mod test {
         let cursor = format!("{milestone_index}.{output_id_str}.{page_size_str}",);
         let parsed: IndexedOutputsCursor = cursor.parse().unwrap();
         assert_eq!(parsed.to_string(), cursor);
+    }
+
+    #[tokio::test]
+    async fn unlockable_by_address_accepted() {
+        let address = "smr1qrlejw3vkxm4e7h5e3suqcklf6z62kfk4dxwqm9m0dpvw0w7udwe2he0vht";
+        let request = |uri: String| {
+            RequestParts::new(
+                Request::builder()
+                    .method("GET")
+                    .uri(uri)
+                    .extension(ApiConfigData::try_from(ApiConfig::default()).unwrap())
+                    .body(())
+                    .unwrap(),
+            )
+        };
+        let expected = Some(Address::from_str(address).unwrap());
+
+        let mut req = request(format!("/outputs?unlockableByAddress={address}"));
+        let outputs = IndexedOutputsPagination::<OutputsQuery>::from_request(&mut req)
+            .await
+            .unwrap();
+        assert_eq!(outputs.query.unlockable_by_address, expected);
+
+        let mut req = request(format!("/outputs/basic?unlockableByAddress={address}"));
+        let basic = IndexedOutputsPagination::<BasicOutputsQuery>::from_request(&mut req)
+            .await
+            .unwrap();
+        assert_eq!(basic.query.unlockable_by_address, expected);
+
+        let mut req = request(format!("/outputs/alias?unlockableByAddress={address}"));
+        let alias = IndexedOutputsPagination::<AliasOutputsQuery>::from_request(&mut req)
+            .await
+            .unwrap();
+        assert_eq!(alias.query.unlockable_by_address, expected);
+
+        let mut req = request(format!("/outputs/nft?unlockableByAddress={address}"));
+        let nft = IndexedOutputsPagination::<NftOutputsQuery>::from_request(&mut req)
+            .await
+            .unwrap();
+        assert_eq!(nft.query.unlockable_by_address, expected);
     }
 
     #[tokio::test]

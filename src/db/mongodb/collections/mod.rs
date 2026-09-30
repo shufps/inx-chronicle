@@ -29,7 +29,7 @@ pub use self::{
     milestone::{MilestoneCollection, MilestoneResult, SyncData},
     outputs::{
         AddressStat, AliasOutputsQuery, BasicOutputsQuery, DistributionStat, FoundryOutputsQuery, IndexedId,
-        NftOutputsQuery, OutputCollection, OutputMetadataResult, OutputWithMetadataResult, OutputsResult,
+        NftOutputsQuery, OutputCollection, OutputMetadataResult, OutputWithMetadataResult, OutputsQuery, OutputsResult,
         UtxoChangesResult,
     },
     protocol_update::ProtocolUpdateCollection,

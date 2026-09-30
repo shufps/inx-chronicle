@@ -4,7 +4,9 @@
 use mongodb::bson::{self, doc};
 use primitive_types::U256;
 
-use super::queries::{AppendQuery, CreatedQuery, GovernorQuery, IssuerQuery, NativeTokensQuery, SenderQuery};
+use super::queries::{
+    AliasUnlockableByAddressQuery, AppendQuery, CreatedQuery, GovernorQuery, IssuerQuery, NativeTokensQuery, SenderQuery,
+};
 use crate::{
     db::mongodb::collections::outputs::indexer::queries::AddressQuery,
     model::payload::{milestone::MilestoneTimestamp, transaction::output::Address},
@@ -15,6 +17,7 @@ use crate::{
 pub struct AliasOutputsQuery {
     pub state_controller: Option<Address>,
     pub governor: Option<Address>,
+    pub unlockable_by_address: Option<Address>,
     pub issuer: Option<Address>,
     pub sender: Option<Address>,
     pub has_native_tokens: Option<bool>,
@@ -30,6 +33,7 @@ impl From<AliasOutputsQuery> for bson::Document {
         queries.push(doc! { "output.kind": "alias" });
         queries.append_query(AddressQuery(query.state_controller));
         queries.append_query(GovernorQuery(query.governor));
+        queries.append_query(AliasUnlockableByAddressQuery(query.unlockable_by_address));
         queries.append_query(IssuerQuery(query.issuer));
         queries.append_query(SenderQuery(query.sender));
         queries.append_query(NativeTokensQuery {
@@ -60,6 +64,7 @@ mod test {
         let query = AliasOutputsQuery {
             state_controller: Some(address),
             governor: Some(address),
+            unlockable_by_address: Some(address),
             issuer: Some(address),
             sender: Some(address),
             has_native_tokens: Some(true),
@@ -73,6 +78,10 @@ mod test {
                 { "output.kind": "alias" },
                 { "details.address": address },
                 { "output.governor_address_unlock_condition.address": address },
+                { "$or": [
+                    { "details.address": address },
+                    { "output.governor_address_unlock_condition.address": address },
+                ] },
                 { "output.features": {
                     "$elemMatch": {
                         "kind": "issuer",

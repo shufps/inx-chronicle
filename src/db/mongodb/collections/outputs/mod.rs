@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 pub use self::indexer::{
-    AliasOutputsQuery, BasicOutputsQuery, FoundryOutputsQuery, IndexedId, NftOutputsQuery, OutputsResult,
+    AliasOutputsQuery, BasicOutputsQuery, FoundryOutputsQuery, IndexedId, NftOutputsQuery, OutputsQuery, OutputsResult,
 };
 use crate::{
     db::{

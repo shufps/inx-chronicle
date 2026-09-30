@@ -8,7 +8,7 @@ use chronicle::{
     db::{
         mongodb::collections::{
             AliasOutputsQuery, BasicOutputsQuery, FoundryOutputsQuery, IndexedId, MilestoneCollection, NftOutputsQuery,
-            OutputCollection,
+            OutputCollection, OutputsQuery,
         },
         MongoDb,
     },
@@ -28,6 +28,7 @@ pub fn routes() -> Router {
     Router::new().nest(
         "/outputs",
         Router::new()
+            .route("/", get(indexed_outputs::<OutputsQuery>))
             .route("/basic", get(indexed_outputs::<BasicOutputsQuery>))
             .nest(
                 "/alias",

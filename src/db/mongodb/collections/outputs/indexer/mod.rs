@@ -3,6 +3,7 @@
 
 mod alias;
 mod basic;
+mod combined;
 mod foundry;
 mod nft;
 mod queries;
@@ -18,7 +19,8 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 
 pub use self::{
-    alias::AliasOutputsQuery, basic::BasicOutputsQuery, foundry::FoundryOutputsQuery, nft::NftOutputsQuery,
+    alias::AliasOutputsQuery, basic::BasicOutputsQuery, combined::OutputsQuery, foundry::FoundryOutputsQuery,
+    nft::NftOutputsQuery,
 };
 use super::{OutputCollection, OutputDocument};
 use crate::{

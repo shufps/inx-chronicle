@@ -6,7 +6,7 @@ use primitive_types::U256;
 
 use super::queries::{
     AddressQuery, AppendQuery, CreatedQuery, ExpirationQuery, IssuerQuery, NativeTokensQuery, SenderQuery,
-    StorageDepositReturnQuery, TagQuery, TimelockQuery,
+    StorageDepositReturnQuery, TagQuery, TimelockQuery, UnlockableByAddressQuery,
 };
 use crate::model::{payload::transaction::output::Tag, tangle::MilestoneTimestamp, utxo::Address};
 
@@ -14,6 +14,7 @@ use crate::model::{payload::transaction::output::Tag, tangle::MilestoneTimestamp
 #[allow(missing_docs)]
 pub struct NftOutputsQuery {
     pub address: Option<Address>,
+    pub unlockable_by_address: Option<Address>,
     pub issuer: Option<Address>,
     pub sender: Option<Address>,
     pub has_native_tokens: Option<bool>,
@@ -38,6 +39,7 @@ impl From<NftOutputsQuery> for bson::Document {
         let mut queries = Vec::new();
         queries.push(doc! { "output.kind": "nft" });
         queries.append_query(AddressQuery(query.address));
+        queries.append_query(UnlockableByAddressQuery(query.unlockable_by_address));
         queries.append_query(IssuerQuery(query.issuer));
         queries.append_query(SenderQuery(query.sender));
         queries.append_query(NativeTokensQuery {
@@ -86,6 +88,7 @@ mod test {
         let address = Address::rand_ed25519();
         let query = NftOutputsQuery {
             address: Some(address),
+            unlockable_by_address: Some(address),
             issuer: Some(address),
             sender: Some(address),
             has_native_tokens: Some(true),
@@ -108,6 +111,11 @@ mod test {
             "$and": [
                 { "output.kind": "nft" },
                 { "details.address": address },
+                { "$or": [
+                    { "details.address": address },
+                    { "output.expiration_unlock_condition.return_address": address },
+                    { "output.storage_deposit_return_unlock_condition.return_address": address },
+                ] },
                 { "output.features": { "$elemMatch": {
                     "kind": "issuer",
                     "address": address
@@ -152,6 +160,7 @@ mod test {
         let address = Address::rand_ed25519();
         let query = NftOutputsQuery {
             address: Some(address),
+            unlockable_by_address: None,
             issuer: None,
             sender: None,
             has_native_tokens: Some(false),
