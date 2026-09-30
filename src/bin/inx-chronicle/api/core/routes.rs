@@ -127,7 +127,9 @@ pub async fn info(database: Extension<MongoDb>) -> ApiResult<InfoResponse> {
 
     let latest_milestone = LatestMilestoneResponse {
         index: newest_milestone.milestone_index.0,
-        timestamp: Some(newest_milestone.milestone_timestamp.0),
+        // The network is EOL, so the latest milestone is far in the past. Clients like the `iota-sdk` refuse to work if
+        // their local time is more than 5 minutes away from this timestamp, but skip that check if it is absent.
+        timestamp: None,
         milestone_id: Some(
             database
                 .collection::<MilestoneCollection>()
@@ -141,7 +143,7 @@ pub async fn info(database: Extension<MongoDb>) -> ApiResult<InfoResponse> {
     // Unfortunately, there is a distinction between `LatestMilestoneResponse` and `ConfirmedMilestoneResponse` in Bee.
     let confirmed_milestone = ConfirmedMilestoneResponse {
         index: latest_milestone.index,
-        timestamp: latest_milestone.timestamp,
+        timestamp: Some(newest_milestone.milestone_timestamp.0),
         milestone_id: latest_milestone.milestone_id,
     };
 
