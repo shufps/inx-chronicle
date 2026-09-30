@@ -30,8 +30,8 @@ use futures::TryStreamExt;
 use iota_sdk::types::{
     api::core::response::{
         self as iota, BaseTokenResponse, BlockMetadataResponse, ConfirmedMilestoneResponse, LatestMilestoneResponse,
-        OutputWithMetadataResponse, ReceiptResponse, ReceiptsResponse, StatusResponse, TreasuryResponse,
-        UtxoChangesResponse,
+        MetricsResponse, OutputWithMetadataResponse, ReceiptResponse, ReceiptsResponse, StatusResponse,
+        TreasuryResponse, UtxoChangesResponse,
     },
     block::{
         output::{OutputMetadata, RentStructure},
@@ -49,6 +49,9 @@ use crate::api::{
     routes::{is_healthy, not_implemented, BYTE_CONTENT_HEADER},
     ApiResult,
 };
+
+/// The node name reported by `/info`.
+const NODE_APP_NAME: &str = "HORNET";
 
 pub fn routes() -> Router {
     Router::new()
@@ -151,7 +154,8 @@ pub async fn info(database: Extension<MongoDb>) -> ApiResult<InfoResponse> {
         .base_token;
 
     Ok(InfoResponse {
-        name: chronicle::CHRONICLE_APP_NAME.into(),
+        // Clients expect to talk to a Hornet node, so we pretend to be one.
+        name: NODE_APP_NAME.into(),
         version: std::env!("CARGO_PKG_VERSION").to_string(),
         status: StatusResponse {
             is_healthy,
@@ -159,6 +163,7 @@ pub async fn info(database: Extension<MongoDb>) -> ApiResult<InfoResponse> {
             confirmed_milestone,
             pruning_index: oldest_milestone.milestone_index.0 - 1,
         },
+        supported_protocol_versions: vec![protocol.version],
         protocol: ProtocolParameters::new(
             protocol.version,
             protocol.network_name,
@@ -179,6 +184,14 @@ pub async fn info(database: Extension<MongoDb>) -> ApiResult<InfoResponse> {
             subunit: Some(base_token.subunit),
             use_metric_prefix: base_token.use_metric_prefix,
         },
+        // The network is EOL, so there are no pending protocol changes and no block activity.
+        pending_protocol_parameters: Vec::new(),
+        metrics: MetricsResponse {
+            blocks_per_second: 0.0,
+            referenced_blocks_per_second: 0.0,
+            referenced_rate: 0.0,
+        },
+        features: Vec::new(),
     })
 }
 
