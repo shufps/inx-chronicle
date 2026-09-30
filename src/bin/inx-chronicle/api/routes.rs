@@ -10,14 +10,10 @@ use axum::{
     routing::{get, post},
     Extension, Json, TypedHeader,
 };
-use chronicle::{
-    db::{mongodb::collections::MilestoneCollection, MongoDb},
-    model::tangle::MilestoneTimestamp,
-};
+use chronicle::db::{mongodb::collections::MilestoneCollection, MongoDb};
 use hyper::StatusCode;
 use regex::RegexSet;
 use serde::Deserialize;
-use time::{Duration, OffsetDateTime};
 
 use super::{
     auth::Auth,
@@ -32,10 +28,6 @@ use super::{
 pub(crate) static BYTE_CONTENT_HEADER: HeaderValue = HeaderValue::from_static("application/vnd.iota.serializer-v1");
 
 const ALWAYS_AVAILABLE_ROUTES: &[&str] = &["/health", "/login", "/routes"];
-
-// Similar to Hornet, we enforce that the latest known milestone is newer than 5 minutes. This should give Chronicle
-// sufficient time to catch up with the node that it is connected too. The current milestone interval is 5 seconds.
-const STALE_MILESTONE_DURATION: Duration = Duration::minutes(5);
 
 pub fn routes() -> Router {
     #[allow(unused_mut)]
@@ -98,12 +90,6 @@ pub fn password_verify(
     Ok(hash == argon2::hash_raw(password, salt, &config)?)
 }
 
-fn is_new_enough(timestamp: MilestoneTimestamp) -> bool {
-    // Panic: The milestone_timestamp is guaranteeed to be valid.
-    let timestamp = OffsetDateTime::from_unix_timestamp(timestamp.0 as i64).unwrap();
-    OffsetDateTime::now_utc() <= timestamp + STALE_MILESTONE_DURATION
-}
-
 async fn list_routes(
     ListRoutesQuery { depth }: ListRoutesQuery,
     Extension(config): Extension<ApiConfigData>,
@@ -137,23 +123,14 @@ async fn list_routes(
     Ok(RoutesResponse { routes })
 }
 
+// Chronicle runs as a read-only archive of an EOL network, so no new milestones will ever arrive. We therefore only
+// require the database to be reachable and to contain at least one milestone, instead of enforcing milestone freshness.
 pub async fn is_healthy(database: &MongoDb) -> ApiResult<bool> {
-    {
-        let newest = match database
-            .collection::<MilestoneCollection>()
-            .get_newest_milestone()
-            .await?
-        {
-            Some(last) => last,
-            None => return Ok(false),
-        };
-
-        if !is_new_enough(newest.milestone_timestamp) {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
+    Ok(database
+        .collection::<MilestoneCollection>()
+        .get_newest_milestone()
+        .await?
+        .is_some())
 }
 
 pub async fn health(database: Extension<MongoDb>) -> StatusCode {
