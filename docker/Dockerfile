@@ -1,7 +1,7 @@
 ############################
 # Build
 ############################
-FROM lukemathwalker/cargo-chef:latest-rust-buster AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-bookworm AS chef
 
 LABEL org.label-schema.description="IOTA permanode implemented as an IOTA Node Extension (INX)."
 LABEL org.label-schema.name="iotaledger/inx-chronicle"
@@ -11,11 +11,11 @@ LABEL org.label-schema.usage="https://github.com/iotaledger/inx-chronicle/blob/m
 
 WORKDIR /inx-chronicle
 
-FROM chef as planner
+FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef as builder
+FROM chef AS builder
 RUN apt-get update && apt-get install -y protobuf-compiler
 COPY --from=planner /inx-chronicle/recipe.json recipe.json
 
@@ -26,9 +26,9 @@ RUN cargo build --profile production --bin inx-chronicle
 ############################
 # Image
 ############################
-# https://console.cloud.google.com/gcr/images/distroless/global/cc-debian11
+# https://console.cloud.google.com/gcr/images/distroless/global/cc-debian12
 # using distroless cc "nonroot" image, which includes everything in the base image (glibc, libssl and openssl)
-FROM gcr.io/distroless/cc-debian11:nonroot AS runtime
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
 # REST API
 EXPOSE 8042/tcp
